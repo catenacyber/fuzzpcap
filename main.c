@@ -10,12 +10,19 @@
 #include <sys/stat.h>
 #include <sys/mman.h>
 
+#include <pcap/pcap.h>
+
 #include "fuzz_pcap.h"
 
 int main(int argc, char** argv)
 {
     struct stat filestat;
     uint8_t * mapped;
+    pcap_t * pkts;
+    char errbuf[PCAP_ERRBUF_SIZE];
+    const u_char *pkt;
+    struct pcap_pkthdr *header;
+    int r;
 
     if (argc != 2) {
         fprintf(stderr, "Expect one argument\n");
@@ -42,8 +49,24 @@ int main(int argc, char** argv)
         //TODO output pcap file
         printf("Thanks for FPC\n");
     } else {
-        //TODO read pcap file
         printf("Trying pcap\n");
+        pkts = pcap_open_offline(argv[1], errbuf);
+        if (pkts == NULL) {
+            fprintf(stderr, "Cannot open pcap file\n");
+        } else {
+            //TODO check return value
+            fwrite(FPC0_HEADER, FPC0_HEADER_LEN, 1, stdout);
+            while (pcap_next_ex(pkts, &header, &pkt) > 0) {
+                //loop over packets
+                //TODO define a fixed endianess
+                fwrite(&header->ts.tv_sec, 8, 1, stdout);
+                fwrite(&header->ts.tv_usec, 8, 1, stdout);
+                //TODO escape FPC0_HEADER
+                fwrite(pkt, 1, header->caplen, stdout);
+                fwrite(FPC0_HEADER, FPC0_HEADER_LEN, 1, stdout);
+            }
+            pcap_close(pkts);
+        }
     }
 
     munmap(mapped, filestat.st_size);
