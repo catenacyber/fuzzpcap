@@ -14,6 +14,7 @@ set(fuzzpcap_src fuzz_pcap.c)
 set(fuzzpcap_hdr fuzz_pcap.h)
 
 add_library(fuzzpcap STATIC ${fuzzpcap_src} ${fuzzpcap_hdr})
+set_target_properties(fuzzpcap PROPERTIES PUBLIC_HEADER ${fuzzpcap_hdr})
 
 set(fuzzpcap_libs "${PCAP_LIB}" fuzzpcap)
 
@@ -22,3 +23,4 @@ set(fpc_bin_src main.c)
 add_executable (fpc_bin ${fpc_bin_src})
 target_link_libraries (fpc_bin ${fuzzpcap_libs})
 
+install(TARGETS fuzzpcap fpc_bin)
