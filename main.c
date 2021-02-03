@@ -18,10 +18,8 @@ int main(int argc, char** argv)
 {
     struct stat filestat;
     uint8_t * mapped;
-    pcap_t * pkts;
     char errbuf[PCAP_ERRBUF_SIZE];
     const u_char *pkt;
-    struct pcap_pkthdr *header;
     int r;
 
     if (argc != 2) {
@@ -46,24 +44,47 @@ int main(int argc, char** argv)
     }
 
     if (FPC_IsFuzzPacketCapture(mapped, filestat.st_size)) {
-        //TODO output pcap file
-        printf("Thanks for FPC\n");
+        pcap_t *pd;
+        pcap_dumper_t *pdumper;
+        FPC_buffer_t pkts;
+        struct pcap_pkthdr header;
+
+        int r = FPC_init(&pkts, mapped, filestat.st_size);
+        if (r >= 0) {
+            pd = pcap_open_dead(pkts.datalink, FPC_SNAPLEN);
+            pdumper = pcap_dump_fopen(pd, stdout);
+            while (FPC_next(&pkts, &header, &pkt) > 0) {
+                pcap_dump((u_char *) pdumper, &header, pkt);
+            }
+            pcap_close(pd);
+            pcap_dump_close(pdumper);
+        }
     } else {
-        printf("Trying pcap\n");
-        pkts = pcap_open_offline(argv[1], errbuf);
+        struct pcap_pkthdr *header;
+
+        pcap_t * pkts = pcap_open_offline(argv[1], errbuf);
         if (pkts == NULL) {
             fprintf(stderr, "Cannot open pcap file\n");
         } else {
-            //TODO check return value
-            fwrite(FPC0_HEADER, FPC0_HEADER_LEN, 1, stdout);
-            while (pcap_next_ex(pkts, &header, &pkt) > 0) {
+            uint8_t dl = FPC_datalink_from(pcap_datalink(pkts));
+            if (dl != FPC_DATALINK_ERROR) {
+                fwrite(FPC0_HEADER, FPC0_HEADER_LEN-1, 1, stdout);
+                fwrite(&dl, 1, 1, stdout);
                 //loop over packets
-                //TODO define a fixed endianess
-                fwrite(&header->ts.tv_sec, 8, 1, stdout);
-                fwrite(&header->ts.tv_usec, 8, 1, stdout);
-                //TODO escape FPC0_HEADER
-                fwrite(pkt, 1, header->caplen, stdout);
-                fwrite(FPC0_HEADER, FPC0_HEADER_LEN, 1, stdout);
+                while (pcap_next_ex(pkts, &header, &pkt) > 0) {
+                    //TODO check return value
+                    //TODO define a fixed endianess
+                    fwrite(&header->ts.tv_sec, sizeof(header->ts.tv_sec), 1, stdout);
+                    fwrite(&header->ts.tv_usec, sizeof(header->ts.tv_usec), 1, stdout);
+                    //TODO escape FPC0_HEADER
+                    fwrite(pkt, 1, header->caplen, stdout);
+                    if (header->caplen > FPC_SNAPLEN) {
+                        fprintf(stderr, "Warning packet too bug for snaplen\n");
+                    }
+                    fwrite(FPC0_HEADER, FPC0_HEADER_LEN, 1, stdout);
+                }
+            } else {
+                fprintf(stderr, "Cannot use pcap datalink\n");
             }
             pcap_close(pkts);
         }
