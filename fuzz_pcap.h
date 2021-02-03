@@ -3,19 +3,34 @@
 
 #include <stdint.h>
 #include <stddef.h>
+#include <stdbool.h>
 
-#define FPC0_HEADER_LEN 4
-#define FPC0_HEADER "FPC0"
+#define FPC0_MAGIC_LEN 4
+#define FPC0_MAGIC "FPC0"
+#define FPC0_HEADER_LEN (FPC0_MAGIC_LEN + 4)
 
 #define FPC_SNAPLEN 0xFFFF
 
-#define FPC_DATALINK_ERROR 0xFF
+#define FPC_DATALINK_ERROR 2
+
+typedef enum FPC_tcp_state {
+    FPC_TCP_STATE_START = 0,
+    FPC_TCP_STATE_SYN,
+    FPC_TCP_STATE_SYNACK,
+    FPC_TCP_STATE_CLI,
+    FPC_TCP_STATE_SRV,
+} FPC_tcp_state_t;
 
 typedef struct _FPC_buffer {
     const uint8_t *Data;
     size_t Size;
     size_t offset;
     uint32_t datalink;
+    bool tcpSingleStream;
+    FPC_tcp_state_t tcpState;
+    uint8_t pkt[FPC_SNAPLEN];
+    uint32_t seqCliAckSrv;
+    uint32_t seqSrvAckCli;
 } FPC_buffer_t;
 
 int FPC_IsFuzzPacketCapture(const uint8_t *Data, size_t Size);

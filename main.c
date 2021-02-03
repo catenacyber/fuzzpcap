@@ -68,7 +68,7 @@ int main(int argc, char** argv)
         } else {
             uint8_t dl = FPC_datalink_from(pcap_datalink(pkts));
             if (dl != FPC_DATALINK_ERROR) {
-                fwrite(FPC0_HEADER, FPC0_HEADER_LEN-1, 1, stdout);
+                fwrite(FPC0_MAGIC, FPC0_MAGIC_LEN-1, 1, stdout);
                 fwrite(&dl, 1, 1, stdout);
                 //loop over packets
                 while (pcap_next_ex(pkts, &header, &pkt) > 0) {
@@ -76,12 +76,12 @@ int main(int argc, char** argv)
                     //TODO define a fixed endianess
                     fwrite(&header->ts.tv_sec, sizeof(header->ts.tv_sec), 1, stdout);
                     fwrite(&header->ts.tv_usec, sizeof(header->ts.tv_usec), 1, stdout);
-                    //TODO escape FPC0_HEADER
+                    //TODO escape FPC0_MAGIC
                     fwrite(pkt, 1, header->caplen, stdout);
                     if (header->caplen > FPC_SNAPLEN) {
                         fprintf(stderr, "Warning packet too bug for snaplen\n");
                     }
-                    fwrite(FPC0_HEADER, FPC0_HEADER_LEN, 1, stdout);
+                    fwrite(FPC0_MAGIC, FPC0_MAGIC_LEN, 1, stdout);
                 }
             } else {
                 fprintf(stderr, "Cannot use pcap datalink\n");
