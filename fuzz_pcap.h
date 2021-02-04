@@ -17,8 +17,7 @@ typedef enum FPC_tcp_state {
     FPC_TCP_STATE_START = 0,
     FPC_TCP_STATE_SYN,
     FPC_TCP_STATE_SYNACK,
-    FPC_TCP_STATE_CLI,
-    FPC_TCP_STATE_SRV,
+    FPC_TCP_STATE_ESTABLISHED,
 } FPC_tcp_state_t;
 
 typedef struct _FPC_buffer {
@@ -31,6 +30,7 @@ typedef struct _FPC_buffer {
     uint8_t pkt[FPC_SNAPLEN];
     uint32_t seqCliAckSrv;
     uint32_t seqSrvAckCli;
+    uint32_t nb;
 } FPC_buffer_t;
 
 int FPC_IsFuzzPacketCapture(const uint8_t *Data, size_t Size);
