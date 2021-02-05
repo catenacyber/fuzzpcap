@@ -71,7 +71,6 @@ int main(int argc, char** argv)
                 //TODO check return value
                 fwrite(FPC0_MAGIC, FPC0_MAGIC_LEN-1, 1, stdout);
                 fwrite(&dl, 1, 1, stdout);
-                fwrite(FPC0_MAGIC, 1, FPC0_HEADER_LEN-FPC0_MAGIC_LEN, stdout);
                 //loop over packets
                 while (pcap_next_ex(pkts, &header, &pkt) > 0) {
                     //TODO define a fixed endianess

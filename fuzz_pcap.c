@@ -43,9 +43,13 @@ int FPC_init(FPC_buffer_t *r, const uint8_t *Data, size_t Size) {
     }
     r->Data = Data;
     r->Size = Size;
-    r->offset = FPC0_HEADER_LEN;
     r->datalink = FPC_datalink_to(Data[FPC0_MAGIC_LEN-1] & 0x7F);
     r->tcpSingleStream = (Data[FPC0_MAGIC_LEN-1] & 0x80);
+    if (r->tcpSingleStream) {
+        r->offset = FPC0_HEADER_LEN;
+    } else {
+        r->offset = FPC0_MAGIC_LEN;
+    }
     memset(r->pkt, FPC_SNAPLEN, 0);
     r->tcpState = FPC_TCP_STATE_START;
     r->seqCliAckSrv = 0x10000000;
@@ -122,11 +126,7 @@ static bpf_u_int32 buildTCPpacket(FPC_buffer_t *pkts, bool s2c, size_t plen) {
 
 #define FCP_BASE_TIME 0x601cf51a
 
-int FPC_next(FPC_buffer_t *pkts, struct pcap_pkthdr *header, const uint8_t **pkt) {
-    if (pkts->offset >= pkts->Size) {
-        return 0;
-    }
-
+int FPC_next_pcap(FPC_buffer_t *pkts, struct pcap_pkthdr *header, const uint8_t **pkt) {
     *pkt = pkts->Data + pkts->offset + sizeof(header->ts.tv_sec) + sizeof(header->ts.tv_usec);
     const uint8_t *next = memmem(pkts->Data + pkts->offset, pkts->Size - pkts->offset, FPC0_MAGIC, FPC0_MAGIC_LEN);
     if (next == NULL) {
@@ -141,62 +141,83 @@ int FPC_next(FPC_buffer_t *pkts, struct pcap_pkthdr *header, const uint8_t **pkt
     header->ts.tv_sec = *((time_t *) (pkts->Data + pkts->offset));
     header->ts.tv_usec = *((suseconds_t *) (pkts->Data + pkts->offset + sizeof(header->ts.tv_sec)));
     header->caplen = next - (*pkt);
+    pkts->offset += header->caplen + sizeof(header->ts.tv_sec) + sizeof(header->ts.tv_usec) + FPC0_MAGIC_LEN;
+    header->len = header->caplen;
+    return 1;
+}
 
-    if (!pkts->tcpSingleStream || pkts->tcpState > FPC_TCP_STATE_SYNACK) {
-        pkts->offset += header->caplen + sizeof(header->ts.tv_sec) + sizeof(header->ts.tv_usec) + FPC0_MAGIC_LEN;
+int FPC_next_tcp(FPC_buffer_t *pkts, struct pcap_pkthdr *header, const uint8_t **pkt) {
+    *pkt = pkts->Data + pkts->offset;
+    const uint8_t *next = memmem(pkts->Data + pkts->offset, pkts->Size - pkts->offset, FPC0_MAGIC, FPC0_MAGIC_LEN);
+    if (next == NULL) {
+        next = pkts->Data + pkts->Size;
     }
-    if (pkts->tcpSingleStream) {
-        switch (pkts->tcpState) {
-            case FPC_TCP_STATE_START:
-            pkts->tcpState = FPC_TCP_STATE_SYN;
-            header->ts.tv_sec = FCP_BASE_TIME;
-            header->ts.tv_usec = 0;
-            header->caplen = buildTCPpacket(pkts, false, 0);
-            *pkt = pkts->pkt;
-            pkts->pkt[header->caplen-FPC_TCP_FLAGS_NEG_OFFSET] |= FPC_TCP_FLAG_SYN;
-            pkts->seqCliAckSrv++;
-            break;
+    if (next < *pkt) {
+        //wrong input
+        return -1;
+    }
 
-            case FPC_TCP_STATE_SYN:
-            pkts->tcpState = FPC_TCP_STATE_SYNACK;
-            header->ts.tv_sec = FCP_BASE_TIME;
-            header->ts.tv_usec = 1;
-            header->caplen = buildTCPpacket(pkts, true, 0);
-            *pkt = pkts->pkt;
-            pkts->pkt[header->caplen-FPC_TCP_FLAGS_NEG_OFFSET] |= FPC_TCP_FLAG_SYN | FPC_TCP_FLAG_ACK;
-            pkts->seqSrvAckCli++;
-            break;
+    memset(header, sizeof(struct pcap_pkthdr), 0);
+    header->ts.tv_sec = FCP_BASE_TIME;
+    header->ts.tv_usec = pkts->nb;
+    pkts->nb++;
+    header->caplen = next - (*pkt);
 
-            case FPC_TCP_STATE_SYNACK:
-            pkts->tcpState = FPC_TCP_STATE_ESTABLISHED;
-            header->ts.tv_sec = FCP_BASE_TIME;
-            header->ts.tv_usec = 2;
-            header->caplen = buildTCPpacket(pkts, false, 0);
-            *pkt = pkts->pkt;
-            pkts->pkt[header->caplen-FPC_TCP_FLAGS_NEG_OFFSET] |= FPC_TCP_FLAG_ACK;
-            break;
+    if (pkts->tcpState > FPC_TCP_STATE_SYNACK) {
+        pkts->offset += header->caplen + FPC0_MAGIC_LEN;
+    }
+    switch (pkts->tcpState) {
+        case FPC_TCP_STATE_START:
+        pkts->tcpState = FPC_TCP_STATE_SYN;
+        header->caplen = buildTCPpacket(pkts, false, 0);
+        *pkt = pkts->pkt;
+        pkts->pkt[header->caplen-FPC_TCP_FLAGS_NEG_OFFSET] |= FPC_TCP_FLAG_SYN;
+        pkts->seqCliAckSrv++;
+        break;
 
-            case FPC_TCP_STATE_ESTABLISHED:
-            if (header->caplen < 2) {
-                return -1;
-            }
-            header->ts.tv_sec = FCP_BASE_TIME;
-            header->ts.tv_usec = 3+pkts->nb;
-            pkts->nb++;
-            header->caplen--;
-            bool s2c = (*pkt[0]) & 1;
-            header->len = buildTCPpacket(pkts, s2c, header->caplen);
-            memcpy(pkts->pkt+header->len, *pkt+1, header->caplen);
-            if (s2c) {
-                pkts->seqSrvAckCli += header->caplen;
-            } else {
-                pkts->seqCliAckSrv += header->caplen;
-            }
-            header->caplen += header->len;
-            *pkt = pkts->pkt;
-            break;
+        case FPC_TCP_STATE_SYN:
+        pkts->tcpState = FPC_TCP_STATE_SYNACK;
+        header->caplen = buildTCPpacket(pkts, true, 0);
+        *pkt = pkts->pkt;
+        pkts->pkt[header->caplen-FPC_TCP_FLAGS_NEG_OFFSET] |= FPC_TCP_FLAG_SYN | FPC_TCP_FLAG_ACK;
+        pkts->seqSrvAckCli++;
+        break;
+
+        case FPC_TCP_STATE_SYNACK:
+        pkts->tcpState = FPC_TCP_STATE_ESTABLISHED;
+        header->caplen = buildTCPpacket(pkts, false, 0);
+        *pkt = pkts->pkt;
+        pkts->pkt[header->caplen-FPC_TCP_FLAGS_NEG_OFFSET] |= FPC_TCP_FLAG_ACK;
+        break;
+
+        case FPC_TCP_STATE_ESTABLISHED:
+        if (header->caplen < 2) {
+            return -1;
         }
+        header->caplen--;
+        bool s2c = (*pkt[0]) & 1;
+        header->len = buildTCPpacket(pkts, s2c, header->caplen);
+        memcpy(pkts->pkt+header->len, *pkt+1, header->caplen);
+        if (s2c) {
+            pkts->seqSrvAckCli += header->caplen;
+        } else {
+            pkts->seqCliAckSrv += header->caplen;
+        }
+        header->caplen += header->len;
+        *pkt = pkts->pkt;
+        break;
     }
     header->len = header->caplen;
     return 1;
+}
+
+int FPC_next(FPC_buffer_t *pkts, struct pcap_pkthdr *header, const uint8_t **pkt) {
+    if (pkts->offset >= pkts->Size) {
+        return 0;
+    }
+
+    if (pkts->tcpSingleStream) {
+        return FPC_next_tcp(pkts, header, pkt);
+    } //else
+    return FPC_next_pcap(pkts, header, pkt);
 }
