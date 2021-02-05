@@ -1,6 +1,7 @@
 // Copyright (c) 2021 Catena cyber
 // Author Philippe Antoine <p.antoine@catenacyber.fr>
 
+#define _GNU_SOURCE
 #include <stdint.h>
 #include <stddef.h>
 #include <string.h>
@@ -50,7 +51,7 @@ int FPC_init(FPC_buffer_t *r, const uint8_t *Data, size_t Size) {
     } else {
         r->offset = FPC0_MAGIC_LEN;
     }
-    memset(r->pkt, FPC_SNAPLEN, 0);
+    memset(r->pkt, 0, FPC_SNAPLEN);
     r->tcpState = FPC_TCP_STATE_START;
     r->seqCliAckSrv = 0x10000000;
     r->seqSrvAckCli = 0x20000000;
@@ -125,9 +126,10 @@ static bpf_u_int32 buildTCPpacket(FPC_buffer_t *pkts, bool s2c, size_t plen) {
 }
 
 #define FCP_BASE_TIME 0x601cf51a
+#define FPC_TS_MAXSIZE 16
 
 int FPC_next_pcap(FPC_buffer_t *pkts, struct pcap_pkthdr *header, const uint8_t **pkt) {
-    *pkt = pkts->Data + pkts->offset + sizeof(header->ts.tv_sec) + sizeof(header->ts.tv_usec);
+    *pkt = pkts->Data + pkts->offset + FPC_TS_MAXSIZE;
     const uint8_t *next = memmem(pkts->Data + pkts->offset, pkts->Size - pkts->offset, FPC0_MAGIC, FPC0_MAGIC_LEN);
     if (next == NULL) {
         next = pkts->Data + pkts->Size;
@@ -137,11 +139,11 @@ int FPC_next_pcap(FPC_buffer_t *pkts, struct pcap_pkthdr *header, const uint8_t 
         return -1;
     }
 
-    memset(header, sizeof(struct pcap_pkthdr), 0);
+    memset(header, 0, sizeof(struct pcap_pkthdr));
     header->ts.tv_sec = *((time_t *) (pkts->Data + pkts->offset));
-    header->ts.tv_usec = *((suseconds_t *) (pkts->Data + pkts->offset + sizeof(header->ts.tv_sec)));
+    header->ts.tv_usec = *((suseconds_t *) (pkts->Data + pkts->offset + FPC_TS_MAXSIZE/2));
     header->caplen = next - (*pkt);
-    pkts->offset += header->caplen + sizeof(header->ts.tv_sec) + sizeof(header->ts.tv_usec) + FPC0_MAGIC_LEN;
+    pkts->offset += header->caplen + FPC_TS_MAXSIZE + FPC0_MAGIC_LEN;
     header->len = header->caplen;
     return 1;
 }
@@ -157,7 +159,7 @@ int FPC_next_tcp(FPC_buffer_t *pkts, struct pcap_pkthdr *header, const uint8_t *
         return -1;
     }
 
-    memset(header, sizeof(struct pcap_pkthdr), 0);
+    memset(header, 0, sizeof(struct pcap_pkthdr));
     header->ts.tv_sec = FCP_BASE_TIME;
     header->ts.tv_usec = pkts->nb;
     pkts->nb++;
