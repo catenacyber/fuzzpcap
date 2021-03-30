@@ -199,6 +199,9 @@ int FPC_next_tcp(FPC_buffer_t *pkts, struct pcap_pkthdr *header, const uint8_t *
         header->caplen--;
         bool s2c = (*pkt[0]) & 1;
         header->len = buildTCPpacket(pkts, s2c, header->caplen);
+        if (header->caplen + header->len > FPC_SNAPLEN) {
+            header->caplen = FPC_SNAPLEN - header->len;
+        }
         memcpy(pkts->pkt+header->len, *pkt+1, header->caplen);
         if (s2c) {
             pkts->seqSrvAckCli += header->caplen;
