@@ -111,14 +111,20 @@ static bpf_u_int32 buildTCPpacket(FPC_buffer_t *pkts, bool s2c, size_t plen) {
         pkts->pkt[r+5] = pkts->seqCliAckSrv >> 16;
         pkts->pkt[r+6] = pkts->seqCliAckSrv >> 8;
         pkts->pkt[r+7] = pkts->seqCliAckSrv;
-        pkts->pkt[r+8] = pkts->seqSrvAckCli >> 24;
-        pkts->pkt[r+9] = pkts->seqSrvAckCli >> 16;
-        pkts->pkt[r+10] = pkts->seqSrvAckCli >> 8;
-        pkts->pkt[r+11] = pkts->seqSrvAckCli;
+        if (pkts->tcpState != FPC_TCP_STATE_SYN) {
+            pkts->pkt[r+8] = pkts->seqSrvAckCli >> 24;
+            pkts->pkt[r+9] = pkts->seqSrvAckCli >> 16;
+            pkts->pkt[r+10] = pkts->seqSrvAckCli >> 8;
+            pkts->pkt[r+11] = pkts->seqSrvAckCli;
+        }
     }
     r += 12;
     pkts->pkt[r] = 0x50; // TCP length
-    pkts->pkt[r+1] = 0; // flags
+    if (pkts->tcpState == FPC_TCP_STATE_ESTABLISHED) {
+        pkts->pkt[r+1] = FPC_TCP_FLAG_ACK; // flags
+    } else {
+        pkts->pkt[r+1] = 0; // flags
+    }
     r+=2;
     memcpy(pkts->pkt+r, FPC_TCP_HEADER_END, FPC_TCP_HEADER_END_LEN);
     r+=FPC_TCP_HEADER_END_LEN;
@@ -196,7 +202,7 @@ int FPC_next_tcp(FPC_buffer_t *pkts, struct pcap_pkthdr *header, const uint8_t *
         break;
 
         case FPC_TCP_STATE_ESTABLISHED:
-        if (header->caplen < 2) {
+        if (header->caplen < 1) {
             return -1;
         }
         header->caplen--;
