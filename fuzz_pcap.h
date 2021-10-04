@@ -13,6 +13,8 @@
 
 #define FPC_DATALINK_ERROR 2
 
+#define FPC_TS_MAXSIZE 16
+
 typedef enum FPC_tcp_state {
     FPC_TCP_STATE_START = 0,
     FPC_TCP_STATE_SYN,

@@ -7,6 +7,7 @@
 #include <stdarg.h>
 #include <fcntl.h>
 #include <unistd.h>
+#include <string.h>
 #include <sys/stat.h>
 #include <sys/mman.h>
 
@@ -68,14 +69,17 @@ int main(int argc, char** argv)
         } else {
             uint8_t dl = FPC_datalink_from(pcap_datalink(pkts));
             if (dl != FPC_DATALINK_ERROR) {
+                uint8_t bufts[FPC_TS_MAXSIZE];
                 //TODO check return value
                 fwrite(FPC0_MAGIC, FPC0_MAGIC_LEN-1, 1, stdout);
                 fwrite(&dl, 1, 1, stdout);
                 //loop over packets
                 while (pcap_next_ex(pkts, &header, &pkt) > 0) {
                     //TODO define a fixed endianess
-                    fwrite(&header->ts.tv_sec, sizeof(header->ts.tv_sec), 1, stdout);
-                    fwrite(&header->ts.tv_usec, sizeof(header->ts.tv_usec), 1, stdout);
+                    memset(bufts, 0, FPC_TS_MAXSIZE);
+                    memcpy(bufts, &header->ts.tv_sec, sizeof(header->ts.tv_sec));
+                    memcpy(bufts+FPC_TS_MAXSIZE/2, &header->ts.tv_usec, sizeof(header->ts.tv_usec));
+                    fwrite(bufts, FPC_TS_MAXSIZE, 1, stdout);
                     fwrite(pkt, 1, header->caplen, stdout);
                     if (header->caplen > FPC_SNAPLEN) {
                         fprintf(stderr, "Warning packet too bug for snaplen\n");

@@ -132,7 +132,6 @@ static bpf_u_int32 buildTCPpacket(FPC_buffer_t *pkts, bool s2c, size_t plen) {
 }
 
 #define FCP_BASE_TIME 0x601cf51a
-#define FPC_TS_MAXSIZE 16
 
 int FPC_next_pcap(FPC_buffer_t *pkts, struct pcap_pkthdr *header, const uint8_t **pkt) {
     *pkt = pkts->Data + pkts->offset + FPC_TS_MAXSIZE;
