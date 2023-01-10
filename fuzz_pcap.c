@@ -150,6 +150,8 @@ int FPC_next_pcap(FPC_buffer_t *pkts, struct pcap_pkthdr *header, const uint8_t 
         header->ts.tv_sec = 0;
     }
     header->ts.tv_usec = *((suseconds_t *) (pkts->Data + pkts->offset + FPC_TS_MAXSIZE/2));
+    // Limit microseconds to 1 million
+    header->ts.tv_usec = ((header.ts.tv_usec % 1000000) + 1000000) % 1000000;
     header->caplen = next - (*pkt);
     pkts->offset += header->caplen + FPC_TS_MAXSIZE + FPC0_MAGIC_LEN;
     header->len = header->caplen;
